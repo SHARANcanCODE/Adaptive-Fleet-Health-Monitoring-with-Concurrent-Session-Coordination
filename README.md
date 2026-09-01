@@ -900,16 +900,3 @@ GitHub Actions workflow (`.github/workflows/ci.yml`) runs on push:
 1. Build for target platform (Raspberry Pi ARM)
 2. Configure `agent.json` with production backend URL
 3. Run as systemd service or container
-
-## License
-
-MIT
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make changes
-4. Add tests
-5. Submit a pull request
-
