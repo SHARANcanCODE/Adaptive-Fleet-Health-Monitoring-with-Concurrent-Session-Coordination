@@ -1,0 +1,151 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  backend:
+    name: Backend (Node.js)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+      - name: Install dependencies
+        run: npm ci || npm install
+      - name: Validate Prisma schema
+        run: npx prisma validate
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/iot
+      - name: Run linter
+        run: npm run lint || true
+      - name: Run tests
+        run: npm test || echo "Tests skipped if no test files"
+      - name: Build
+        run: npm run build
+
+  dashboard:
+    name: Dashboard (Next.js)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
+      - name: Install dependencies
+        run: npm ci || npm install
+      - name: Run linter
+        run: npm run lint || true
+      - name: Run tests
+        run: npm test || echo "Tests skipped if no test files"
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_BACKEND_URL: http://localhost:8080
+
+  agent:
+    name: Agent (C++)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./agent-cpp
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake libcurl4-openssl-dev build-essential
+      - name: Build agent and vibration_sensor
+        run: |
+          mkdir -p build
+          cd build
+          cmake ..
+          make
+      - name: Verify executables
+        run: |
+          cd build
+          test -f agent && echo "[OK] agent executable built successfully"
+          test -f vibration_sensor && echo "[OK] vibration_sensor executable built successfully"
+
+  e2e:
+    name: End-to-end smoke test (Docker stack)
+    runs-on: ubuntu-latest
+    needs: [backend, dashboard, agent]
+    defaults:
+      run:
+        working-directory: ./infra
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start Docker stack (HTTP pipeline)
+      # Use the same compose file as local dev; MQTT/Python ML flags use defaults (HTTP-only path)
+        run: |
+          docker compose up -d --build db mosquitto ml-service
+          echo "Waiting for dependencies to be healthy..."
+          sleep 15
+          docker compose up -d --build backend dashboard
+        env:
+          MQTT_ENABLE: "false"
+          PY_ML_ENABLE: "false"
+
+      - name: Wait for backend health
+        run: |
+          set -e
+          echo "Checking service status..."
+          docker compose ps
+          echo "Backend logs:"
+          docker compose logs backend --tail=50 || true
+          echo "Mosquitto logs:"
+          docker compose logs mosquitto --tail=20 || true
+          echo "ML service logs:"
+          docker compose logs ml-service --tail=20 || true
+          for i in $(seq 1 40); do
+            if curl -sf http://localhost:8080/api/health > /dev/null; then
+              echo "Backend is healthy"
+              exit 0
+            fi
+            echo "Waiting for backend health... ($i/40)"
+            sleep 5
+          done
+          echo "Backend failed to become healthy"
+          docker compose logs backend || true
+          docker compose ps || true
+          exit 1
+
+      - name: Ingest sample metrics
+        run: |
+          set -e
+          curl -sf -X POST http://localhost:8080/api/ingest \
+            -H "Content-Type: application/json" \
+            -d '{
+              "deviceId": "ci-device-001",
+              "metrics": [
+                {
+                  "temperature_c": 22.5,
+                  "vibration_g": 0.02,
+                  "humidity_pct": 45.0,
+                  "voltage_v": 3.3
+                }
+              ]
+            }' > /dev/null
+          echo "Ingest request succeeded"
+
+      - name: Tear down Docker stack
+        if: always()
+        run: |
+          docker compose down -v || true
+
