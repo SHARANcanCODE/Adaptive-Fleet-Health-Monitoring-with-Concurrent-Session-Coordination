@@ -1,14 +1,5 @@
 # Adaptive Fleet Health Monitoring with Concurrent Session Coordination
 
-![Build Status](https://img.shields.io/github/actions/workflow/status/SHARANcanCODE/Adaptive-Fleet-Health-Monitoring-with-Concurrent-Session-Coordination/ci.yml?branch=main)
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Node](https://img.shields.io/badge/node-20+-green.svg)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)
-![C++](https://img.shields.io/badge/C++-17-orange.svg)
-![Docker](https://img.shields.io/badge/docker-ready-blue.svg)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-blue.svg)
-![Next.js](https://img.shields.io/badge/Next.js-14-black.svg)
-
 A production-ready, multi-service system for collecting IoT device metrics, performing real-time anomaly detection, and visualizing data through a modern web dashboard.
 
 ##  Key Features
