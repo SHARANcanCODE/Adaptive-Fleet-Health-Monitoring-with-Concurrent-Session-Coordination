@@ -1,16 +1,24 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { fetchDevices, fetchAnomalies, Device, Anomaly } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
+import { useLiveControl } from '@/lib/live-control';
 import LiveStatus from '@/components/LiveStatus';
+import AnomalyBadge from '@/components/AnomalyBadge';
 import { format, subHours } from 'date-fns';
 
 export default function Home() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [anomalies24h, setAnomalies24h] = useState<Anomaly[]>([]);
   const [loading, setLoading] = useState(true);
+  const { isPaused } = useLiveControl();
+  const isPausedRef = useRef(isPaused);
+
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
 
   const loadDevices = async () => {
     try {
@@ -48,10 +56,10 @@ export default function Home() {
     const socket = getSocket();
 
     const onMetricNew = (data: { deviceId: string; metric: any }) => {
+      if (isPausedRef.current) return;
       setDevices((prev) => {
         const exists = prev.some((d) => d.id === data.deviceId);
         if (!exists) {
-          // New device discovered, re-fetch list once
           loadDevices();
           return prev;
         }
@@ -72,27 +80,29 @@ export default function Home() {
     };
 
     const onAnomalyNew = (data: { deviceId: string; anomaly: any }) => {
-      setAnomalies24h((prev) => {
-        // Add to recent list if not already there (idempotency)
-        if (prev.some((a) => a.id === data.anomaly.id)) return prev;
-        return [data.anomaly, ...prev].slice(0, 100);
-      });
+      if (isPausedRef.current) return;
+      if (data?.anomaly) {
+        setAnomalies24h((prev) => {
+          if (prev.some((a) => a.id === data.anomaly.id)) return prev;
+          return [data.anomaly, ...prev].slice(0, 100);
+        });
 
-      setDevices((prev) =>
-        prev.map((d) => {
-          if (d.id === data.deviceId) {
-            return {
-              ...d,
-              lastAnomaly: true,
-              _count: {
-                ...d._count!,
-                anomalies: (d._count?.anomalies || 0) + 1,
-              },
-            };
-          }
-          return d;
-        })
-      );
+        setDevices((prev) =>
+          prev.map((d) => {
+            if (d.id === data.deviceId) {
+              return {
+                ...d,
+                lastAnomaly: true,
+                _count: {
+                  ...d._count!,
+                  anomalies: (d._count?.anomalies || 0) + 1,
+                },
+              };
+            }
+            return d;
+          })
+        );
+      }
     };
 
     socket.on('metric:new', onMetricNew);
@@ -116,83 +126,98 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">
-            IoT Anomaly Detection Dashboard
-          </h1>
+      <div className="max-w-7xl mx-auto space-y-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">
+              IoT Anomaly Detection Dashboard
+            </h1>
+            <p className="text-gray-600 text-sm mt-1">
+              Push-based adaptive telemetry baseline monitoring and regional conflict coordination
+            </p>
+          </div>
           <LiveStatus />
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-sm font-medium text-gray-500 mb-2">Total Devices</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">
+            <h3 className="text-xs font-semibold uppercase text-gray-500 mb-2">Total Devices</h3>
             <p className="text-3xl font-bold text-gray-900">{devices.length}</p>
           </div>
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-sm font-medium text-gray-500 mb-2">Total Metrics</h3>
+          <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">
+            <h3 className="text-xs font-semibold uppercase text-gray-500 mb-2">Total Metrics Streamed</h3>
             <p className="text-3xl font-bold text-gray-900">{totalMetrics.toLocaleString()}</p>
           </div>
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-sm font-medium text-gray-500 mb-2">Anomalies (24h)</h3>
-            <p className="text-3xl font-bold text-red-600">{anomalies24h.length}</p>
+          <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">
+            <h3 className="text-xs font-semibold uppercase text-gray-500 mb-2">Anomalies Detected (24h)</h3>
+            <p className="text-3xl font-bold text-rose-600">{anomalies24h.length}</p>
           </div>
         </div>
 
         {/* Quick Links */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <Link
             href="/devices"
-            className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition"
+            className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 hover:shadow-md transition"
           >
             <h2 className="text-xl font-semibold text-gray-900 mb-2">View All Devices</h2>
-            <p className="text-gray-600">Browse and manage IoT devices</p>
+            <p className="text-gray-600 text-sm">Browse device inventory, view live metrics and adaptive baselines</p>
           </Link>
           <Link
             href="/anomalies"
-            className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition"
+            className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 hover:shadow-md transition"
           >
             <h2 className="text-xl font-semibold text-gray-900 mb-2">View Anomalies</h2>
-            <p className="text-gray-600">Review detected anomalies and alerts</p>
+            <p className="text-gray-600 text-sm">Review detected anomaly events and failure mode classifications</p>
           </Link>
         </div>
 
         {/* Recent Anomalies */}
         {anomalies24h.length > 0 && (
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">Recent Anomalies</h2>
+          <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">
+            <h2 className="text-lg font-bold text-gray-900 mb-4">Recent Anomalies</h2>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Time
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Device
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      Type
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      Failure Mode
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Score
                     </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {anomalies24h.slice(0, 10).map((anomaly) => (
-                    <tr key={anomaly.id}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {format(new Date(anomaly.ts), 'PPpp')}
+                    <tr key={anomaly.id} className="hover:bg-gray-50 transition">
+                      <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500 font-mono">
+                        {format(new Date(anomaly.ts), 'PP pp')}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {anomaly.device?.name || anomaly.deviceId}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
+                        <Link
+                          href={`/devices/${encodeURIComponent(anomaly.deviceId)}`}
+                          className="text-blue-600 hover:text-blue-800"
+                        >
+                          {anomaly.device?.name || anomaly.deviceId}
+                        </Link>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {anomaly.type}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <AnomalyBadge
+                          score={anomaly.score}
+                          type={anomaly.type}
+                          metricChannel={anomaly.metricChannel}
+                          flagged={anomaly.flagged}
+                        />
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-red-600">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-bold font-mono text-rose-600">
                         {anomaly.score.toFixed(2)}
                       </td>
                     </tr>
@@ -206,4 +231,3 @@ export default function Home() {
     </div>
   );
 }
-

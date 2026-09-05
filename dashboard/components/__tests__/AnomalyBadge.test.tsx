@@ -10,12 +10,12 @@ describe('AnomalyBadge', () => {
     render(
       <AnomalyBadge
         score={5.2}
-        type="isoforest"
+        type="spike"
         flagged={true}
       />
     );
 
-    expect(screen.getByText(/Anomaly/i)).toBeInTheDocument();
+    expect(screen.getByText(/Spike/i)).toBeInTheDocument();
   });
 
   it('does not render when not flagged', () => {

@@ -81,15 +81,19 @@ export class ZScoreEngine implements AnomalyEngine {
     for (let idx = 0; idx < points.length; idx++) {
       const point = points[idx];
 
-      // Update statistics for each metric
-      this.updateStats(deviceId, 'temperature', point.temperature_c);
-      this.updateStats(deviceId, 'vibration', point.vibration_g);
-      this.updateStats(deviceId, 'humidity', point.humidity_pct);
-      this.updateStats(deviceId, 'voltage', point.voltage_v);
-
+      // Ensure stats exist for this device before we read them
+      if (!this.stats.has(deviceId)) {
+        this.stats.set(deviceId, {
+          temperature: { mean: 0, std: 1, points: [] },
+          vibration: { mean: 0, std: 1, points: [] },
+          humidity: { mean: 0, std: 1, points: [] },
+          voltage: { mean: 0, std: 1, points: [] },
+        });
+      }
       const deviceStats = this.stats.get(deviceId)!;
 
-      // Calculate z-scores for each metric
+      // Score against the PRIOR baseline (before this point is folded in),
+      // so an anomalous point can't dilute its own mean/std and mask itself.
       const zTemp = this.calculateZScore(
         point.temperature_c,
         deviceStats.temperature.mean,
@@ -113,16 +117,18 @@ export class ZScoreEngine implements AnomalyEngine {
 
       // Use maximum z-score as overall anomaly score
       const maxZScore = Math.max(zTemp, zVib, zHum, zVolt);
-      
-      // Convert to anomaly score (higher is more anomalous)
-      // Use negative z-score so higher scores indicate anomalies
-      const score = maxZScore;
 
       results.push({
         pointIndex: idx,
-        score: score,
+        score: maxZScore,
         isAnomaly: maxZScore > this.threshold,
       });
+
+      // Now fold this point into the rolling baseline for future points
+      this.updateStats(deviceId, 'temperature', point.temperature_c);
+      this.updateStats(deviceId, 'vibration', point.vibration_g);
+      this.updateStats(deviceId, 'humidity', point.humidity_pct);
+      this.updateStats(deviceId, 'voltage', point.voltage_v);
     }
 
     return results;

@@ -17,6 +17,9 @@ import devicesRouter from './routes/devices';
 import metricsRouter from './routes/metrics';
 import anomaliesRouter from './routes/anomalies';
 import healthRouter from './routes/health';
+import conflictsRouter from './routes/conflicts';
+import fleetsRouter from './routes/fleets';
+import simulatorRouter from './routes/simulator';
 
 const app = express();
 const httpServer = createServer(app);
@@ -35,6 +38,9 @@ app.use('/api/devices', devicesRouter);
 app.use('/api/metrics', metricsRouter);
 app.use('/api/anomalies', anomaliesRouter);
 app.use('/api/health', healthRouter);
+app.use('/api/conflicts', conflictsRouter);
+app.use('/api/fleets', fleetsRouter);
+app.use('/api/simulator', simulatorRouter);
 
 // Root route
 app.get('/', (req, res) => {
@@ -47,6 +53,8 @@ app.get('/', (req, res) => {
       metrics: '/api/metrics',
       anomalies: '/api/anomalies',
       health: '/api/health',
+      conflicts: '/api/conflicts',
+      fleets: '/api/fleets',
     },
   });
 });

@@ -7,11 +7,20 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
+RUN apk add --no-cache libc6-compat
+
 # Install dependencies
 RUN npm install
 
 # Copy source code
 COPY . .
+
+# NEXT_PUBLIC_* vars are inlined into the client bundle at build time,
+# so they must be passed in as build args (not just container env vars).
+ARG NEXT_PUBLIC_BACKEND_URL=http://localhost:8080
+ARG NEXT_PUBLIC_SOCKET_URL=http://localhost:8080
+ENV NEXT_PUBLIC_BACKEND_URL=$NEXT_PUBLIC_BACKEND_URL
+ENV NEXT_PUBLIC_SOCKET_URL=$NEXT_PUBLIC_SOCKET_URL
 
 # Build Next.js app
 RUN npm run build

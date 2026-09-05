@@ -16,6 +16,10 @@ export interface AnomalyResult {
   pointIndex: number;
   score: number;
   isAnomaly: boolean;
+  // Failure-mode classification, when the engine supports it (adaptive-baseline does).
+  failureType?: 'spike' | 'drift' | 'flatline' | 'oscillation' | 'sensor_swap';
+  // Which metric channel triggered the classification.
+  metric?: 'temperature_c' | 'vibration_g' | 'humidity_pct' | 'voltage_v';
 }
 
 export interface AnomalyEngine {

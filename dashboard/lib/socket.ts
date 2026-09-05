@@ -12,7 +12,7 @@ export function getSocket(): Socket {
   if (!socket) {
     socket = io(SOCKET_URL, {
       path: '/socket.io',
-      transports: ['websocket', 'polling'],
+      transports: ['websocket'],
     });
   }
   return socket;

@@ -43,5 +43,8 @@
   },
   "overrides": {
     "glob": "^13.0.0"
+  },
+  "optionalDependencies": {
+    "@next/swc-linux-x64-musl": "14.2.35"
   }
 }

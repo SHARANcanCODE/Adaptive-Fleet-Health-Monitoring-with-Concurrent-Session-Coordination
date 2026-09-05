@@ -15,6 +15,7 @@ const prisma = new PrismaClient();
 const CreateDeviceSchema = z.object({
   name: z.string().min(1),
   location: z.string().optional(),
+  region: z.string().optional(),
 });
 
 // GET /api/devices - List all devices
@@ -88,8 +89,10 @@ router.post('/', async (req: Request, res: Response) => {
 
     const device = await prisma.device.create({
       data: {
+        externalId: body.name,
         name: body.name,
         location: body.location || null,
+        region: body.region || null,
       },
     });
 

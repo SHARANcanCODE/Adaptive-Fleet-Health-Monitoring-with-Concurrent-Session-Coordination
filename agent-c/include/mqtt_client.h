@@ -10,6 +10,8 @@ typedef struct {
     char topic[256];
     int interval_ms;
     double spike_prob;
+    double base_lat;
+    double base_lng;
     bool connected;
     struct mosquitto *mosq;
 } mqtt_config_t;

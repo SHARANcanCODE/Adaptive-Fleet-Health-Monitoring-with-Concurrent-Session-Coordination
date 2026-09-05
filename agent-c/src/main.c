@@ -14,8 +14,12 @@
 #define DEFAULT_TOPIC_PREFIX "sensors"
 #define DEFAULT_INTERVAL_MS 1000
 #define DEFAULT_SPIKE_PROB 0.01
+#define DEFAULT_BASE_LAT 37.335
+#define DEFAULT_BASE_LNG -121.881
 
 static volatile bool running = true;
+static time_t start_time;
+static int message_count = 0;
 
 void signal_handler(int sig) {
   (void)sig;
@@ -65,6 +69,10 @@ int parse_config(const char *filename, mqtt_config_t *config) {
       config->interval_ms = atoi(value);
     } else if (strcmp(key, "anomaly_spike_prob") == 0) {
       config->spike_prob = atof(value);
+    } else if (strcmp(key, "lat") == 0) {
+      config->base_lat = atof(value);
+    } else if (strcmp(key, "lng") == 0) {
+      config->base_lng = atof(value);
     }
   }
 
@@ -132,6 +140,8 @@ int main(int argc, char *argv[]) {
            DEFAULT_TOPIC_PREFIX, config.device_id);
   config.interval_ms = DEFAULT_INTERVAL_MS;
   config.spike_prob = DEFAULT_SPIKE_PROB;
+  config.base_lat = DEFAULT_BASE_LAT;
+  config.base_lng = DEFAULT_BASE_LNG;
 
   // Parse config file if exists
   parse_config("config/agent.ini", &config);
@@ -178,6 +188,7 @@ int main(int argc, char *argv[]) {
 
   // Seed random
   srand(time(NULL));
+  start_time = time(NULL);
 
   time_t last_reconnect_attempt = 0;
   int reconnect_delay = 1; // Start with 1s
@@ -189,6 +200,12 @@ int main(int argc, char *argv[]) {
     generate_metrics(&temp, &vib, &hum, &volt, config.spike_prob,
                      now - start_time);
 
+    // Simulate small GPS jitter around the device's base location so the
+    // dashboard map has lat/lng to plot (the wire format supports optional
+    // lat/lng, but nothing previously populated them).
+    double lat = config.base_lat + normal_random(0, 0.0005);
+    double lng = config.base_lng + normal_random(0, 0.0005);
+
     // Format JSON payload
     char timestamp[64];
     format_iso8601(timestamp, sizeof(timestamp), now);
@@ -197,8 +214,9 @@ int main(int argc, char *argv[]) {
     int json_len =
         snprintf(json, sizeof(json),
                  "{\"ts\":\"%s\",\"temperature_c\":%.2f,\"vibration_g\":%.4f,"
-                 "\"humidity_pct\":%.2f,\"voltage_v\":%.2f}",
-                 timestamp, temp, vib, hum, volt);
+                 "\"humidity_pct\":%.2f,\"voltage_v\":%.2f,"
+                 "\"lat\":%.6f,\"lng\":%.6f}",
+                 timestamp, temp, vib, hum, volt, lat, lng);
 
     if (json_len < 0 || json_len >= sizeof(json)) {
       fprintf(stderr, "Payload too large or format error\n");

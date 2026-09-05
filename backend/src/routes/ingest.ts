@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { rateLimit } from 'express-rate-limit';
 import { PrismaClient } from '@prisma/client';
 import { createAnomalyEngine } from '../anomaly';
+import { checkAndRecordConflict } from '../anomaly/conflicts';
 import { emitMetricNew, emitAnomalyNew } from '../realtime';
 import { apiKeyAuth } from '../middleware/auth';
 import { logger } from '../utils/logger';
@@ -17,10 +18,11 @@ const router = Router();
 const prisma = new PrismaClient();
 const anomalyEngine = createAnomalyEngine();
 
-// Rate limiting for ingest: 20 requests per minute per IP
+// Rate limiting for ingest: configurable via env, defaults to 10000 requests/minute per IP
+// to comfortably support high-frequency simulator fleets without dropping requests.
 const ingestLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
-  max: 20,
+  windowMs: Number(process.env.INGEST_RATE_LIMIT_WINDOW_MS) || 60 * 1000,
+  max: Number(process.env.INGEST_RATE_LIMIT_MAX) || 10000,
   message: { error: 'Too many requests', message: 'Rate limit exceeded for ingest' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -67,10 +69,13 @@ router.post('/', async (req: Request, res: Response) => {
         });
       }
 
-      // Auto-create device
+      // Auto-create device. Devices that arrive via raw ingest (rather than
+      // through the fleet-import provisioning flow) default to fleet-a with
+      // their externalId equal to their id, and no region.
       device = await prisma.device.create({
         data: {
           id: deviceId,
+          externalId: deviceId,
           name: `Device ${deviceId}`,
           location: null,
         },
@@ -112,7 +117,9 @@ router.post('/', async (req: Request, res: Response) => {
         metricId: insertedMetrics[result.pointIndex]?.id || null,
         ts: insertedMetrics[result.pointIndex]?.ts || now,
         score: result.score,
-        type: anomalyEngine.getType(),
+        type: result.failureType || anomalyEngine.getType(),
+        metricChannel: result.metric || null,
+        engine: anomalyEngine.getType(),
         flagged: true,
       }));
 
@@ -121,6 +128,9 @@ router.post('/', async (req: Request, res: Response) => {
       insertedAnomalies = await prisma.anomaly.createManyAndReturn({
         data: anomaliesToInsert,
       });
+
+      // Check for region-wide concurrent anomalies across devices
+      await checkAndRecordConflict(prisma, deviceId, device.region);
     }
 
     // Emit real-time events
@@ -159,4 +169,3 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 export default router;
-

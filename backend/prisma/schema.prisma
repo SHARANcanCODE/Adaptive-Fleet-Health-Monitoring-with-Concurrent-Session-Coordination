@@ -11,13 +11,19 @@ datasource db {
 }
 
 model Device {
-  id        String    @id @default(uuid())
-  name      String
-  location  String?
-  createdAt DateTime  @default(now())
-  metrics   Metric[]
-  anomalies Anomaly[]
+  id             String    @id @default(uuid())
+  externalId     String
+  fleetId        String    @default("fleet-a")
+  region         String?
+  name           String
+  location       String?
+  conflictWithId String?
+  createdAt      DateTime  @default(now())
+  metrics        Metric[]
+  anomalies      Anomaly[]
 
+  @@unique([externalId, fleetId])
+  @@index([region])
   @@map("devices")
 }
 
@@ -45,11 +51,39 @@ model Anomaly {
   metric    Metric?  @relation(fields: [metricId], references: [id], onDelete: SetNull)
   ts        DateTime @default(now())
   score     Float
+  // Failure-mode classification: spike | drift | flatline | oscillation | sensor_swap
   type      String
+  // Which metric channel triggered the classification (temperature_c | vibration_g | humidity_pct | voltage_v)
+  metricChannel String?
+  // Which detection engine produced this result (adaptive-baseline | median-deviation | zscore | isoforest)
+  engine    String   @default("adaptive-baseline")
   flagged   Boolean  @default(true)
 
   @@index([deviceId, ts])
   @@index([ts])
   @@map("anomalies")
+}
+
+model Conflict {
+  id        String   @id @default(uuid())
+  region    String
+  deviceIds Json
+  status    String   @default("open")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([region, status])
+  @@map("conflicts")
+}
+
+model FleetMergeEvent {
+  id                 String   @id @default(uuid())
+  fleetId            String
+  externalId         String
+  resolvedDeviceId   String
+  conflictingDeviceId String
+  createdAt          DateTime @default(now())
+
+  @@map("fleet_merge_events")
 }
 

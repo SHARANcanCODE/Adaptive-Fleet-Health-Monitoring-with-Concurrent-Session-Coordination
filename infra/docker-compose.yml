@@ -67,10 +67,11 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/iot
       PORT: 8080
       NODE_ENV: production
-      ANOMALY_ENGINE: ${ANOMALY_ENGINE:-isoforest}
+      ANOMALY_ENGINE: ${ANOMALY_ENGINE:-adaptive}
       ANOMALY_WINDOW_SIZE: ${ANOMALY_WINDOW_SIZE:-512}
       ANOMALY_THRESHOLD_PERCENTILE: ${ANOMALY_THRESHOLD_PERCENTILE:-95}
       ALLOW_AUTO_DEVICE: ${ALLOW_AUTO_DEVICE:-true}
+      INGEST_RATE_LIMIT_MAX: ${INGEST_RATE_LIMIT_MAX:-10000}
       SOCKET_IO_CORS: ${SOCKET_IO_CORS:-*}
       MQTT_ENABLE: ${MQTT_ENABLE:-false}
       MQTT_BROKER_URL: ${MQTT_BROKER_URL:-mqtt://mosquitto:1883}
@@ -110,11 +111,14 @@ services:
     build:
       context: ../dashboard
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8080}
+        NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL:-http://localhost:8080}
     container_name: iot-dashboard
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_BACKEND_URL: http://backend:8080
-      NEXT_PUBLIC_SOCKET_URL: http://backend:8080
+      NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8080}
+      NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL:-http://localhost:8080}
     ports:
       - "3000:3000"
     depends_on:
@@ -129,20 +133,20 @@ services:
     networks:
       - iot-network
 
-  # Optional: pgAdmin (disabled by default)
-  # Uncomment to enable:
-  # pgadmin:
-  #   image: dpage/pgadmin4:latest
-  #   container_name: iot-pgadmin
-  #   environment:
-  #     PGADMIN_DEFAULT_EMAIL: admin@iot.local
-  #     PGADMIN_DEFAULT_PASSWORD: admin
-  #   ports:
-  #     - "5050:80"
-  #   depends_on:
-  #     - db
-  #   networks:
-  #     - iot-network
+  simulator:
+    build:
+      context: ../simulator
+      dockerfile: Dockerfile
+    container_name: iot-simulator
+    environment:
+      BACKEND_URL: http://backend:8080
+      TICK_INTERVAL_MS: 1000
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - iot-network
 
 volumes:
   postgres_data:
@@ -150,4 +154,3 @@ volumes:
 networks:
   iot-network:
     driver: bridge
-

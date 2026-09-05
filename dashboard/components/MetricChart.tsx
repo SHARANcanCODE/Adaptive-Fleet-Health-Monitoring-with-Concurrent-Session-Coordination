@@ -57,8 +57,10 @@ export default function MetricChart({
             interval="preserveStartEnd"
           />
           <YAxis
-            label={{ value: `${label} (${unit})`, angle: -90, position: 'insideLeft' }}
-            tick={{ fontSize: 12 }}
+            domain={['auto', 'auto']}
+            label={{ value: `${label} (${unit})`, angle: -90, position: 'insideLeft', offset: 10, style: { fontSize: 11, fill: '#6b7280' } }}
+            tick={{ fontSize: 11, fill: '#4b5563' }}
+            width={45}
           />
           <Tooltip
             labelFormatter={(value) => {

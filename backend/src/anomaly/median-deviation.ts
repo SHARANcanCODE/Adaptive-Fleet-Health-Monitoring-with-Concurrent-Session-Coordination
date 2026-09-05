@@ -17,17 +17,20 @@ import { AnomalyEngine, AnomalyResult, MetricPoint } from './engine';
  */
 class MedianDeviationModel {
   private contamination: number;
+  private medians: number[] = [];
+  private mads: number[] = [];
 
   constructor(contamination: number = 0.1) {
     this.contamination = contamination;
   }
 
   /**
-   * Score each point based on its distance from the feature medians,
-   * normalized by the Median Absolute Deviation (MAD).
+   * Fit the model's medians and MADs from a window of features.
+   * Must be called before score() so new points are compared against
+   * the established window statistics rather than their own.
    */
-  score(features: number[][]): number[] {
-    if (features.length === 0) return [];
+  fit(features: number[][]): void {
+    if (features.length === 0) return;
 
     const nFeatures = features[0].length;
     const medians: number[] = [];
@@ -38,7 +41,7 @@ class MedianDeviationModel {
       const values = features.map(f => f[i]).sort((a, b) => a - b);
       const median = values[Math.floor(values.length / 2)];
       medians.push(median);
-      
+
       const deviations = values.map(v => Math.abs(v - median));
       deviations.sort((a, b) => a - b);
       // Use 1 as fallback for MAD to avoid division by zero
@@ -46,11 +49,28 @@ class MedianDeviationModel {
       mads.push(mad);
     }
 
+    this.medians = medians;
+    this.mads = mads;
+  }
+
+  /**
+   * Score each point based on its distance from the fitted feature medians,
+   * normalized by the fitted Median Absolute Deviation (MAD).
+   */
+  score(features: number[][]): number[] {
+    if (features.length === 0) return [];
+    if (this.medians.length === 0) {
+      // Not fitted yet - fall back to fitting on this batch
+      this.fit(features);
+    }
+
+    const nFeatures = this.medians.length;
+
     // Score each point based on aggregate normalized distance
     return features.map(point => {
       let totalDistance = 0;
       for (let i = 0; i < nFeatures; i++) {
-        const normalizedDistance = Math.abs(point[i] - medians[i]) / (mads[i] || 1);
+        const normalizedDistance = Math.abs(point[i] - this.medians[i]) / (this.mads[i] || 1);
         totalDistance += normalizedDistance;
       }
       // Negative aggregate distance (lower = more anomalous)
@@ -117,9 +137,13 @@ export class MedianDeviationEngine implements AnomalyEngine {
       p.voltage_v,
     ]);
 
-    // Score window to establish threshold
+    // Fit the model on the full window, then score the window to establish
+    // a threshold. The new batch is scored against these same fitted stats
+    // (rather than against itself), so a single-point batch can still be
+    // correctly compared to the historical window.
+    model.fit(allFeatures);
     const allScores = model.score(allFeatures);
-    
+
     // Calculate threshold from percentile
     const sortedScores = [...allScores].sort((a, b) => a - b);
     const thresholdIndex = Math.floor(
@@ -127,14 +151,16 @@ export class MedianDeviationEngine implements AnomalyEngine {
     );
     const threshold = sortedScores[thresholdIndex] || 0;
 
-    // Score the specific batch
+    // Score the specific batch against the fitted window stats
     const newScores = model.score(newFeatures);
 
-    // Return results
+    // Return results. Use <= so a point sitting exactly at the percentile
+    // boundary (common with small windows, where it IS the extreme value
+    // used to derive the threshold) is still correctly flagged.
     return newScores.map((score, idx) => ({
       pointIndex: idx,
       score: Math.abs(score),
-      isAnomaly: score < threshold,
+      isAnomaly: score <= threshold,
     }));
   }
 }

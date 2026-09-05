@@ -9,6 +9,7 @@ import { PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
 import { scoreBatch, checkHealth } from '../anomaly/pyservice';
 import { createAnomalyEngine } from '../anomaly';
+import { checkAndRecordConflict } from '../anomaly/conflicts';
 import { getIOServer } from '../realtime';
 
 const MQTT_ENABLE = process.env.MQTT_ENABLE === 'true';
@@ -180,6 +181,7 @@ async function ensureDeviceExists(
       },
       create: {
         id: deviceId,
+        externalId: deviceId,
         name: `Device ${deviceId}`,
         location: lat !== undefined && lng !== undefined ? `lat:${lat},lng:${lng}` : null,
       },
@@ -252,7 +254,13 @@ async function processBatchIfReady(deviceId: string): Promise<void> {
   }));
 
   try {
-    let scoredPoints: Array<{ index: number; score: number; isAnomaly: boolean }> = [];
+    let scoredPoints: Array<{
+      index: number;
+      score: number;
+      isAnomaly: boolean;
+      failureType?: string;
+      metric?: string;
+    }> = [];
 
     if (PY_ML_ENABLE) {
       // Use Python ML service (needs ts field)
@@ -267,21 +275,25 @@ async function processBatchIfReady(deviceId: string): Promise<void> {
         scoredPoints = await scoreBatch(deviceId, pointsWithTs);
       } catch (error) {
         logger.warn(`Python ML service failed, falling back to z-score:`, error);
-        // Fallback to z-score
+        // Fallback to the adaptive/z-score engine
         const zScoreResults = await zScoreEngine.scoreBatch(deviceId, points);
         scoredPoints = zScoreResults.map((r, idx) => ({
           index: idx,
           score: r.score,
           isAnomaly: r.isAnomaly,
+          failureType: r.failureType,
+          metric: r.metric,
         }));
       }
     } else {
-      // Use z-score engine directly
+      // Use the configured engine (adaptive-baseline by default) directly
       const zScoreResults = await zScoreEngine.scoreBatch(deviceId, points);
       scoredPoints = zScoreResults.map((r, idx) => ({
         index: idx,
         score: r.score,
         isAnomaly: r.isAnomaly,
+        failureType: r.failureType,
+        metric: r.metric,
       }));
     }
 
@@ -299,7 +311,13 @@ async function processBatchIfReady(deviceId: string): Promise<void> {
 async function storeAnomalies(
   deviceId: string,
   batch: BufferItem[],
-  scoredPoints: Array<{ index: number; score: number; isAnomaly: boolean }>
+  scoredPoints: Array<{
+    index: number;
+    score: number;
+    isAnomaly: boolean;
+    failureType?: string;
+    metric?: string;
+  }>
 ): Promise<void> {
   if (!prisma) return;
 
@@ -312,7 +330,9 @@ async function storeAnomalies(
         metricId: item.metric.id,
         ts: item.metric.ts,
         score: s.score,
-        type: PY_ML_ENABLE ? 'isoforest' : 'median-deviation',
+        type: s.failureType || (PY_ML_ENABLE ? 'isoforest' : zScoreEngine.getType()),
+        metricChannel: s.metric || null,
+        engine: PY_ML_ENABLE ? 'isoforest' : zScoreEngine.getType(),
         flagged: true,
       };
     });
@@ -327,6 +347,9 @@ async function storeAnomalies(
     anomalies.forEach((anomaly) => {
       emitAnomalyUpdate(deviceId, anomaly);
     });
+
+    const device = await prisma.device.findUnique({ where: { id: deviceId } });
+    await checkAndRecordConflict(prisma, deviceId, device?.region);
 
     logger.info(`Stored ${anomalies.length} anomalies for device ${deviceId}`);
   }

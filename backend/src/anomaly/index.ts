@@ -8,13 +8,17 @@
 import { AnomalyEngine } from './engine';
 import { MedianDeviationEngine } from './median-deviation';
 import { ZScoreEngine } from './zscore';
+import { AdaptiveBaselineClassifier } from './classifier';
 
 export function createAnomalyEngine(): AnomalyEngine {
-  const engineType = process.env.ANOMALY_ENGINE || 'median-deviation';
+  const engineType = process.env.ANOMALY_ENGINE || 'adaptive';
   const windowSize = parseInt(process.env.ANOMALY_WINDOW_SIZE || '512', 10);
   const thresholdPercentile = parseInt(process.env.ANOMALY_THRESHOLD_PERCENTILE || '95', 10);
 
   switch (engineType.toLowerCase()) {
+    case 'adaptive':
+    case 'adaptive-baseline':
+      return new AdaptiveBaselineClassifier();
     case 'median-deviation':
     case 'isoforest': // Backward compatibility
       try {
@@ -26,12 +30,13 @@ export function createAnomalyEngine(): AnomalyEngine {
     case 'zscore':
       return new ZScoreEngine(windowSize, 3.0);
     default:
-      console.warn(`Unknown anomaly engine: ${engineType}, defaulting to zscore`);
-      return new ZScoreEngine(200, 3.0);
+      console.warn(`Unknown anomaly engine: ${engineType}, defaulting to adaptive`);
+      return new AdaptiveBaselineClassifier();
   }
 }
 
 export { AnomalyEngine, MetricPoint, AnomalyResult } from './engine';
 export { MedianDeviationEngine } from './median-deviation';
 export { ZScoreEngine } from './zscore';
+export { AdaptiveBaselineClassifier } from './classifier';
 
