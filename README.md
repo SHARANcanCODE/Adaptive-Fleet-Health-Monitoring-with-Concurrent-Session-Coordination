@@ -80,62 +80,6 @@ graph TB
     E --> B
 ```
 
-### Data Flow Diagram
-
-```mermaid
-sequenceDiagram
-    participant Agent as C++ Agent
-    participant API as Express API
-    participant DB as PostgreSQL
-    participant Engine as Anomaly Engine
-    participant Socket as Socket.IO
-    participant Dashboard as Next.js Dashboard
-    
-    loop Every Interval
-        Agent->>API: POST /api/ingest<br/>{metrics: [...]}
-        API->>DB: Store metrics
-        API->>Engine: Score batch
-        Engine->>Engine: Detect anomalies
-        Engine->>DB: Store anomalies
-        API->>Socket: Emit metric:new
-        API->>Socket: Emit anomaly:new
-        Socket->>Dashboard: Real-time update
-        Dashboard->>Dashboard: Update charts
-    end
-    
-    Dashboard->>API: GET /api/metrics
-    API->>DB: Query metrics
-    DB->>API: Return data
-    API->>Dashboard: JSON response
-```
-
-### Deployment Architecture
-
-```mermaid
-graph LR
-    subgraph "Docker Compose"
-        subgraph "Network: iot-network"
-            DB[(PostgreSQL:5432)]
-            BACKEND[Backend:8080]
-            DASHBOARD[Dashboard:3000]
-        end
-    end
-    
-    subgraph "Host Machine"
-        AGENT[C++ Agent<br/>make run-agent]
-    end
-    
-    AGENT -.->|HTTP| BACKEND
-    BACKEND <--> DB
-    BACKEND <-->|Socket.IO| DASHBOARD
-    BACKEND -->|REST API| DASHBOARD
-    
-    style DB fill:#336791
-    style BACKEND fill:#68a063
-    style DASHBOARD fill:#000000
-    style AGENT fill:#00599c
-```
-
 ### Data Flow
 
 1. **C++ Agent** simulates IoT devices, generating metrics (temperature, vibration, humidity, voltage) with configurable intervals
